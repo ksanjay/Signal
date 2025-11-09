@@ -63,13 +63,9 @@
                 <div class="bg-white p-6 sm:p-8">
                     <h2 class="text-2xl font-bold text-gray-900 mb-4">1. Market Selection</h2>
                     <p class="text-sm text-gray-600 mb-4">
-                        Uses <a href="https://www.alphavantage.co/support/#api-key" target="_blank" class="text-blue-600 underline">Alpha Vantage</a>. Enter your free API key and a stock/ETF symbol (e.g., AAPL, SPY, MSFT) to fetch the latest ~100 daily data periods.
+                        Uses <a href="https://www.alphavantage.co/support/#api-key" target="_blank" class="text-blue-600 underline">Alpha Vantage</a>. Enter a stock/ETF symbol (e.g., AAPL, SPY, MSFT) to fetch the latest ~100 daily data periods. (API key is pre-configured).
                     </p>
-                    <div class="space-y-4">
-                        <div>
-                            <label for="api-key-input" class="block text-sm font-medium text-gray-700">Alpha Vantage API Key</label>
-                            <input type="password" id="api-key-input" placeholder="Get your free key" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
-                        </div>
+                    <div>
                         <div>
                             <label for="symbol-input" class="block text-sm font-medium text-gray-700">Stock/ETF Symbol</label>
                             <input type="text" id="symbol-input" value="AAPL" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
@@ -131,7 +127,7 @@
             const dataStatusEl = document.getElementById('data-status');
             const calculateButton = document.getElementById('calculate-button');
             const symbolInput = document.getElementById('symbol-input');
-            const apiKeyInput = document.getElementById('api-key-input');
+            const apiKey = 'JQQUUJQRAX8TLXSM';
 
             const calculateSMA = (data, period) => {
                 if (data.length < period) return 0;
@@ -272,7 +268,7 @@
                 }
             };
             
-            const fetchMarketData = async (symbol, apiKey) => {
+            const fetchMarketData = async (symbol) => {
                 dataStatusEl.textContent = `Fetching ${symbol} data...`;
                 calculateButton.disabled = true;
                 calculateButton.textContent = 'Loading Data...';
@@ -317,18 +313,13 @@
             
             calculateButton.addEventListener('click', async () => {
                 const symbol = symbolInput.value;
-                const apiKey = apiKeyInput.value;
 
-                if (!apiKey) {
-                    dataStatusEl.textContent = 'Please enter your free Alpha Vantage API key.';
-                    return;
-                }
                 if (!symbol) {
                     dataStatusEl.textContent = 'Please enter a symbol.';
                     return;
                 }
 
-                const marketData = await fetchMarketData(symbol, apiKey);
+                const marketData = await fetchMarketData(symbol);
                 
                 if (!marketData) {
                     return;
