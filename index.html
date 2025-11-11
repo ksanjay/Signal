@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-M">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Live Strategy Analysis Dashboard</title>
+    <title>Live Strategy & Risk Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
@@ -58,25 +58,16 @@
             box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
         }
     </style>
-    <!-- Chosen Palette: Warm Neutral (bg-gray-100, text-gray-800, white cards, with green-600, red-600, and blue-700 accents) -->
-    <!-- Application Structure Plan: Upgraded to a 2-column "Dashboard" layout. Left column (lg:col-span-1) contains "Controls" (symbol input, button) and the "Latest Signal" summary. This provides at-a-glance info. The main column (lg:col-span-2) is for visualization, containing a large "Price Chart" and a sub-grid for the 3 "Indicator Charts" (RSI, MACD, Volume). This structure separates controls from detailed analysis, allowing a user to see the latest signal immediately, and then explore the *historical context* for that signal in the charts. -->
-    <!-- Visualization & Content Choices:
-        - Price Chart: Goal(Analyze/Change) -> Chart.js Line chart (Canvas) displaying Price, Bollinger Bands, and 50 SMA. Critically, it now *also* plots "Buy" (green) and "Sell" (red) signals (as scatter points) derived from the full historical calculation. This is the biggest improvement, showing the strategy's historical performance.
-        - Indicator Charts (RSI, MACD, Volume): Goal(Analyze/Compare) -> Three separate Chart.js charts (Line/Bar) to show the *historical data* for each indicator, allowing the user to visually confirm *why* a signal occurred (e.g., "I see the signal because RSI crossed 30").
-        - Latest Signal: Goal(Inform) -> The original HTML/CSS summary box is kept, but its data is now sourced from the *last entry* in the new historical calculation array.
-        - All choices adhere to the NO SVG/Mermaid constraint and use Chart.js.
-    -->
-    <!-- CONFIRMATION: NO SVG graphics used. NO Mermaid JS used. -->
-</head>
+    </head>
 <body class="bg-gray-100 text-gray-800">
 
     <div class="w-full max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-12 sm:py-16">
         <header class="text-center mb-10">
             <h1 class="text-3xl font-extrabold text-gray-900 sm:text-4xl">
-                Live Strategy Analysis Dashboard
+                Live Strategy & Risk Dashboard
             </h1>
             <p class="mt-4 text-lg text-gray-600">
-                Analyzes and visualizes the "3-out-of-5" strategy by plotting historical signals on the charts.
+                Analyzes the "3-out-of-5" strategy with integrated ATR-based stop-loss management.
             </p>
         </header>
 
@@ -93,7 +84,7 @@
                         <input type="text" id="symbol-input" value="AAPL" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
                     </div>
                     <button id="calculate-button" class="w-full mt-6 bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-6 rounded-lg shadow-lg transition-transform transform hover:scale-105 disabled:bg-gray-400">
-                        Analyze Signals
+                        Analyze Signals & Risk
                     </button>
                     <div id="data-status" class="mt-4 text-sm text-gray-500 font-mono h-24 p-3 border border-gray-200 rounded-lg bg-gray-50 overflow-y-auto">
                         Ready to analyze.
@@ -137,6 +128,24 @@
                         </div>
                     </div>
                 </div>
+
+                <div class="bg-white shadow-2xl rounded-2xl p-6 sm:p-8">
+                    <h2 class="text-2xl font-bold text-gray-900 mb-4">3. Risk Management</h2>
+                    <div class="space-y-4">
+                        <div>
+                            <label for="atr-multiplier" class="block text-sm font-medium text-gray-700">ATR(14) Multiplier for Stop-Loss</label>
+                            <input type="number" id="atr-multiplier" value="2.0" step="0.1" class="mt-1 block w-full px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 sm:text-sm">
+                        </div>
+                        <div class="indicator-row">
+                            <span class="indicator-name">Latest ATR(14) Value:</span>
+                            <span id="atr-value" class="text-lg font-bold text-blue-600">...</span>
+                        </div>
+                        <div class="indicator-row">
+                            <span class="indicator-name">Calculated Stop-Loss:</span>
+                            <span id="stop-loss-value" class="text-lg font-bold text-red-600">...</span>
+                        </div>
+                    </div>
+                </div>
             </div>
             
             <div class="lg:col-span-2 space-y-8">
@@ -162,6 +171,7 @@
     <script>
         const apiKey = 'JQQUUJQRAX8TLXSM';
         let priceChart, rsiChart, macdChart, volumeChart;
+        let lastAnalysisResult = null;
 
         const initChart = (ctx, config) => {
             return new Chart(ctx, config);
@@ -206,6 +216,11 @@
                         {
                             label: 'Hedge Signal', type: 'scatter', data: [],
                             backgroundColor: '#ef4444', pointStyle: 'triangle', radius: 7, rotation: 180,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Stop-Loss', type: 'scatter', data: [],
+                            backgroundColor: '#f97316', pointStyle: 'line', radius: 5, rotation: 90,
                             yAxisID: 'y'
                         }
                     ]
@@ -261,7 +276,7 @@
             volumeChart = initChart(ctx, config);
         };
 
-        const updateDom = (id, result) => {
+        const updateDom = (id, result)_ => {
             const valueEl = document.getElementById(`${id}-value`);
             if (valueEl) valueEl.textContent = result.value;
             
@@ -308,29 +323,35 @@
             return Math.sqrt(avgSqDiff);
         };
 
-        const calculateAllSignals = (dates, closes, volumes) => {
+        const calculateAllSignals = (dates, closes, highs, lows, volumes) => {
             let signals = [];
             let rsiValues = [];
             let macdLines = [];
             let signalLines = [];
             let macdHist = [];
             
-            let avgGain = 0;
-            let avgLoss = 0;
-
+            let avgGain = 0, avgLoss = 0, avgTR = 0;
             const rsiPeriod = 18;
+            const atrPeriod = 14;
             const macdFast = 12, macdSlow = 26, macdSignal = 9;
             const bbPeriod = 20, bbMult = 2.5;
             const volPeriod = 20;
             const trendPeriod = 50;
 
-            for (let i = 1; i < rsiPeriod; i++) {
-                const change = closes[i] - closes[i - 1];
-                if (change > 0) avgGain += change;
-                else avgLoss -= change;
+            for (let i = 1; i < Math.max(rsiPeriod, atrPeriod); i++) {
+                if (i < rsiPeriod) {
+                    const change = closes[i] - closes[i - 1];
+                    if (change > 0) avgGain += change;
+                    else avgLoss -= change;
+                }
+                if (i < atrPeriod) {
+                    const tr = Math.max(highs[i] - lows[i], Math.abs(highs[i] - closes[i-1]), Math.abs(lows[i] - closes[i-1]));
+                    avgTR += tr;
+                }
             }
             avgGain /= rsiPeriod;
             avgLoss /= rsiPeriod;
+            avgTR /= atrPeriod;
 
             let emaFast = calculateSMA(closes.slice(0, macdSlow), macdFast);
             let emaSlow = calculateSMA(closes.slice(0, macdSlow), macdSlow);
@@ -339,6 +360,8 @@
             for (let i = 0; i < closes.length; i++) {
                 const date = dates[i];
                 const close = closes[i];
+                const high = highs[i];
+                const low = lows[i];
                 const volume = volumes[i];
                 
                 let rsi = null, rsiState = 'neutral', rsiVal = '...';
@@ -350,17 +373,21 @@
                         avgGain = (avgGain * (rsiPeriod - 1) + gain) / rsiPeriod;
                         avgLoss = (avgLoss * (rsiPeriod - 1) + loss) / rsiPeriod;
                     }
-                    
                     if (avgLoss === 0) rsi = 100;
-                    else {
-                        const rs = avgGain / avgLoss;
-                        rsi = 100 - (100 / (1 + rs));
-                    }
+                    else { const rs = avgGain / avgLoss; rsi = 100 - (100 / (1 + rs)); }
                     rsiValues.push({ x: date, y: rsi });
-                    
                     if (rsi < 30) rsiState = 'bullish';
                     else if (rsi > 70) rsiState = 'bearish';
                     rsiVal = rsi.toFixed(2);
+                }
+
+                let atr = null;
+                if (i >= atrPeriod) {
+                    if (i > atrPeriod) {
+                        const tr = Math.max(high - low, Math.abs(high - closes[i-1]), Math.abs(low - closes[i-1]));
+                        avgTR = (avgTR * (atrPeriod - 1) + tr) / atrPeriod;
+                    }
+                    atr = avgTR;
                 }
 
                 let macdState = 'neutral', macdVal = '...';
@@ -391,7 +418,6 @@
                         bbBasis = sma;
                         bbUpper = sma + (stdDev * bbMult);
                         bbLower = sma - (stdDev * bbMult);
-                        
                         if (close < bbLower) bbState = 'bearish';
                         else if (close > bbLower && close < bbUpper) bbState = 'bullish';
                         bbVal = `P:${close}, B:${bbLower.toFixed(2)}-${bbUpper.toFixed(2)}`;
@@ -437,7 +463,7 @@
                 
                 signals.push({
                     date, close, volume, finalSignal, indicators,
-                    calcs: { rsi, macdLine: (macdLines[i-macdSlow] || {}).y, signalLine: (signalLines[i-macdSlow-macdSignal+1] || {}).y, bbBasis, bbUpper, bbLower, volSma, trendSma }
+                    calcs: { rsi, atr, macdLine: (macdLines[i-macdSlow] || {}).y, signalLine: (signalLines[i-macdSlow-macdSignal+1] || {}).y, bbBasis, bbUpper, bbLower, volSma, trendSma }
                 });
             }
             
@@ -471,20 +497,124 @@
                 }
 
                 const closes = dates.map(date => parseFloat(timeSeries[date]["4. close"]));
+                const highs = dates.map(date => parseFloat(timeSeries[date]["2. high"]));
+                const lows = dates.map(date => parseFloat(timeSeries[date]["3. low"]));
                 const volumes = dates.map(date => parseFloat(timeSeries[date]["5. volume"]));
                 const dateObjs = dates.map(date => new Date(date));
                 
                 dataStatusEl.textContent = `Successfully fetched ${dates.length} periods for ${symbol}.`;
                 
-                return { dateObjs, closes, volumes };
+                return { dateObjs, closes, highs, lows, volumes };
 
             } catch (error) {
                 dataStatusEl.textContent = `Error: ${error.message}`;
                 return null;
             } finally {
                 calculateButton.disabled = false;
-                calculateButton.textContent = 'Analyze Signals';
+                calculateButton.textContent = 'Analyze Signals & Risk';
             }
+        };
+
+        const updateUI = () => {
+            if (!lastAnalysisResult) return;
+            
+            const { signals, dateObjs } = lastAnalysisResult;
+            const atrMultiplier = parseFloat(document.getElementById('atr-multiplier').value) || 2.0;
+
+            const latest = signals[signals.length - 1];
+                
+            updateDom('rsi', latest.indicators.rsi);
+            updateDom('macd', latest.indicators.macd);
+            updateDom('bb', latest.indicators.bb);
+            updateDom('vol', latest.indicators.vol);
+            updateDom('trend', latest.indicators.trend);
+            
+            const finalSignalEl = document.getElementById('final-signal-display');
+            finalSignalEl.classList.remove('bg-green-600', 'bg-red-600', 'bg-gray-500');
+
+            const atrValEl = document.getElementById('atr-value');
+            const stopLossValEl = document.getElementById('stop-loss-value');
+            
+            atrValEl.textContent = latest.calcs.atr ? latest.calcs.atr.toFixed(2) : 'N/A';
+            stopLossValEl.textContent = '...';
+
+            let stopLossLevel = null;
+
+            if (latest.finalSignal === 'long') {
+                finalSignalEl.textContent = 'STRONG LONG SIGNAL';
+                finalSignalEl.classList.add('bg-green-600');
+                if (latest.calcs.atr) {
+                    stopLossLevel = latest.close - (latest.calcs.atr * atrMultiplier);
+                    stopLossValEl.textContent = stopLossLevel.toFixed(2);
+                }
+            } else if (latest.finalSignal === 'hedge') {
+                finalSignalEl.textContent = 'STRONG HEDGE SIGNAL';
+                finalSignalEl.classList.add('bg-red-600');
+                if (latest.calcs.atr) {
+                    stopLossLevel = latest.close + (latest.calcs.atr * atrMultiplier);
+                    stopLossValEl.textContent = stopLossLevel.toFixed(2);
+                }
+            } else {
+                finalSignalEl.textContent = 'NEUTRAL / NO SIGNAL';
+                finalSignalEl.classList.add('bg-gray-500');
+            }
+            
+            const priceData = signals.map(s => ({ x: s.date, y: s.close }));
+            const sma50Data = signals.map(s => ({ x: s.date, y: s.calcs.trendSma }));
+            const bbUpperData = signals.map(s => ({ x: s.date, y: s.calcs.bbUpper }));
+            const bbLowerData = signals.map(s => ({ x: s.date, y: s.calcs.bbLower }));
+            
+            const longSignals = [], hedgeSignals = [], stopLossData = [];
+            
+            signals.forEach(s => {
+                if (s.finalSignal === 'long') {
+                    longSignals.push({ x: s.date, y: s.calcs.bbLower ? s.calcs.bbLower * 0.98 : s.close * 0.98 });
+                    if (s.calcs.atr) {
+                        stopLossData.push({ x: s.date, y: s.close - (s.calcs.atr * atrMultiplier) });
+                    }
+                } else if (s.finalSignal === 'hedge') {
+                    hedgeSignals.push({ x: s.date, y: s.calcs.bbUpper ? s.calcs.bbUpper * 1.02 : s.close * 1.02 });
+                    if (s.calcs.atr) {
+                        stopLossData.push({ x: s.date, y: s.close + (s.calcs.atr * atrMultiplier) });
+                    }
+                }
+            });
+
+            priceChart.data.labels = dateObjs;
+            priceChart.data.datasets[0].data = priceData;
+            priceChart.data.datasets[1].data = sma50Data;
+            priceChart.data.datasets[2].data = bbUpperData;
+            priceChart.data.datasets[3].data = bbLowerData;
+            priceChart.data.datasets[4].data = longSignals;
+            priceChart.data.datasets[5].data = hedgeSignals;
+            priceChart.data.datasets[6].data = stopLossData;
+            priceChart.update();
+            
+            const rsiData = signals.map(s => ({ x: s.date, y: s.calcs.rsi }));
+            const rsi70 = dateObjs.map(d => ({ x: d, y: 70 }));
+            const rsi30 = dateObjs.map(d => ({ x: d, y: 30 }));
+            
+            rsiChart.data.labels = dateObjs;
+            rsiChart.data.datasets[0].data = rsiData;
+            rsiChart.data.datasets[1].data = rsi70;
+            rsiChart.data.datasets[2].data = rsi30;
+            rsiChart.update();
+            
+            const macdLineData = signals.map(s => ({ x: s.date, y: s.calcs.macdLine }));
+            const signalLineData = signals.map(s => ({ x: s.date, y: s.calcs.signalLine }));
+            
+            macdChart.data.labels = dateObjs;
+            macdChart.data.datasets[0].data = macdLineData;
+            macdChart.data.datasets[1].data = signalLineData;
+            macdChart.update();
+
+            const volumeData = signals.map(s => ({ x: s.date, y: s.volume }));
+            const volSmaData = signals.map(s => ({ x: s.date, y: s.calcs.volSma }));
+            
+            volumeChart.data.labels = dateObjs;
+            volumeChart.data.datasets[0].data = volumeData;
+            volumeChart.data.datasets[1].data = volSmaData;
+            volumeChart.update();
         };
         
         document.addEventListener('DOMContentLoaded', () => {
@@ -494,8 +624,9 @@
             initVolumeChart();
             
             const calculateButton = document.getElementById('calculate-button');
+What other improvements can I make to this application?
             const symbolInput = document.getElementById('symbol-input');
-            const finalSignalEl = document.getElementById('final-signal-display');
+            const atrMultiplierInput = document.getElementById('atr-multiplier');
 
             calculateButton.addEventListener('click', async () => {
                 const symbol = symbolInput.value;
@@ -507,70 +638,15 @@
                 const marketData = await fetchMarketData(symbol);
                 if (!marketData) return;
 
-                const { dateObjs, closes, volumes } = marketData;
-                const signals = calculateAllSignals(dateObjs, closes, volumes);
+                const { dateObjs, closes, highs, lows, volumes } = marketData;
+                const signals = calculateAllSignals(dateObjs, closes, highs, lows, volumes);
                 
-                const latest = signals[signals.length - 1];
-                
-                updateDom('rsi', latest.indicators.rsi);
-                updateDom('macd', latest.indicators.macd);
-                updateDom('bb', latest.indicators.bb);
-                updateDom('vol', latest.indicators.vol);
-                updateDom('trend', latest.indicators.trend);
-                
-                finalSignalEl.classList.remove('bg-green-600', 'bg-red-600', 'bg-gray-500');
-                if (latest.finalSignal === 'long') {
-                    finalSignalEl.textContent = 'STRONG LONG SIGNAL';
-                    finalSignalEl.classList.add('bg-green-600');
-                } else if (latest.finalSignal === 'hedge') {
-                    finalSignalEl.textContent = 'STRONG HEDGE SIGNAL';
-                    finalSignalEl.classList.add('bg-red-600');
-                } else {
-                    finalSignalEl.textContent = 'NEUTRAL / NO SIGNAL';
-                    finalSignalEl.classList.add('bg-gray-500');
-                }
-                
-                const priceData = signals.map(s => ({ x: s.date, y: s.close }));
-                const sma50Data = signals.map(s => ({ x: s.date, y: s.calcs.trendSma }));
-                const bbUpperData = signals.map(s => ({ x: s.date, y: s.calcs.bbUpper }));
-                const bbLowerData = signals.map(s => ({ x: s.date, y: s.calcs.bbLower }));
-                const longSignals = signals.filter(s => s.finalSignal === 'long').map(s => ({ x: s.date, y: s.calcs.bbLower ? s.calcs.bbLower * 0.98 : s.close * 0.98 }));
-                const hedgeSignals = signals.filter(s => s.finalSignal === 'hedge').map(s => ({ x: s.date, y: s.calcs.bbUpper ? s.calcs.bbUpper * 1.02 : s.close * 1.02 }));
-
-                priceChart.data.labels = dateObjs;
-                priceChart.data.datasets[0].data = priceData;
-                priceChart.data.datasets[1].data = sma50Data;
-                priceChart.data.datasets[2].data = bbUpperData;
-                priceChart.data.datasets[3].data = bbLowerData;
-                priceChart.data.datasets[4].data = longSignals;
-                priceChart.data.datasets[5].data = hedgeSignals;
-                priceChart.update();
-                
-                const rsiData = signals.map(s => ({ x: s.date, y: s.calcs.rsi }));
-                const rsi70 = dateObjs.map(d => ({ x: d, y: 70 }));
-                const rsi30 = dateObjs.map(d => ({ x: d, y: 30 }));
-                
-                rsiChart.data.labels = dateObjs;
-                rsiChart.data.datasets[0].data = rsiData;
-                rsiChart.data.datasets[1].data = rsi70;
-                rsiChart.data.datasets[2].data = rsi30;
-                rsiChart.update();
-                
-                const macdLineData = signals.map(s => ({ x: s.date, y: s.calcs.macdLine }));
-                const signalLineData = signals.map(s => ({ x: s.date, y: s.calcs.signalLine }));
-                
-                macdChart.data.labels = dateObjs;
-                macdChart.data.datasets[0].data = macdLineData;
-                macdChart.data.datasets[1].data = signalLineData;
-                macdChart.update();
-
-                const volumeData = signals.map(s => ({ x: s.date, y: s.volume }));
-                const volSmaData = signals.map(s => ({ x: s.date, y: s.calcs.volSma }));
-                
-                volumeChart.data.labels = dateObjs;
-                volumeChart.data.datasets[0].data = volumeData;
-                volumeChart.data.datasets[1].data = volSmaData;
-                volumeChart.update();
+                lastAnalysisResult = { signals, dateObjs };
+                updateUI();
+            });
+            
+            atrMultiplierInput.addEventListener('change', () => {
+                updateUI();
             });
             
             calculateButton.click();
