@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Time to Hedge — Signal Dashboard</title>
+    <link rel="stylesheet" href="/static/style.css">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@3.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+</head>
+<body class="bg-gray-100 min-h-screen">
+<div class="max-w-7xl mx-auto px-4 py-8">
+
+    <div class="mb-10 text-center">
+        <h1 class="text-4xl font-black text-gray-900">Time to Hedge?</h1>
+        <p class="mt-2 text-gray-500">3-out-of-5 composite signal · Price · RSI · MACD · Bollinger Bands · Volume</p>
+    </div>
+
+    <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+
+        <!-- Left column: controls + latest signal -->
+        <div class="lg:col-span-1 space-y-8">
+
+            <!-- 1. Market Selection -->
+            <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+                <h2 class="text-xl font-bold text-gray-900 mb-3">1. Market Selection</h2>
+                <p class="text-gray-500 text-sm mb-4">Enter any US stock or ETF ticker to fetch up to 2 years of daily data.</p>
+
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Symbol</label>
+                <input id="symbol-input" type="text" value="SPY"
+                    class="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-3 uppercase"
+                    placeholder="e.g. AAPL, SPY, QQQ" />
+
+                <label class="block text-sm font-semibold text-gray-700 mb-1">Period</label>
+                <select id="period-select"
+                    class="w-full border border-gray-300 rounded-md px-3 py-2 text-gray-900 focus:outline-none focus:ring-2 focus:ring-blue-500 mb-4">
+                    <option value="3mo">3 months</option>
+                    <option value="6mo">6 months</option>
+                    <option value="1y" selected>1 year</option>
+                    <option value="2y">2 years</option>
+                </select>
+
+                <button id="analyze-btn"
+                    class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 rounded-lg transition-colors">
+                    Analyze Signals
+                </button>
+
+                <p id="data-status" class="mt-3 text-sm text-gray-500 font-mono min-h-[2.5rem]"></p>
+            </div>
+
+            <!-- 2. Latest Signal -->
+            <div class="bg-white rounded-2xl border border-gray-200 p-6 shadow-sm">
+                <h2 class="text-xl font-bold text-gray-900 mb-4">2. Latest Signal</h2>
+
+                <div class="mb-1 text-xs font-semibold text-gray-400 uppercase tracking-widest">Final Composite Signal</div>
+                <div id="final-signal-display"
+                    class="px-8 py-5 text-2xl font-bold text-center text-white rounded-lg bg-gray-400 mb-5 transition-all">
+                    —
+                </div>
+
+                <div class="mb-2 text-xs font-semibold text-gray-400 uppercase tracking-widest">Indicator Breakdown</div>
+                <div class="space-y-3">
+                    <div class="indicator-row">
+                        <div>
+                            <div class="indicator-name">RSI (18)</div>
+                            <div id="rsi-value" class="indicator-value">—</div>
+                        </div>
+                        <span id="rsi-state" class="indicator-state state-neutral">—</span>
+                    </div>
+                    <div class="indicator-row">
+                        <div>
+                            <div class="indicator-name">MACD (12, 26, 9)</div>
+                            <div id="macd-value" class="indicator-value">—</div>
+                        </div>
+                        <span id="macd-state" class="indicator-state state-neutral">—</span>
+                    </div>
+                    <div class="indicator-row">
+                        <div>
+                            <div class="indicator-name">Bollinger (20, 2.5σ)</div>
+                            <div id="bb-value" class="indicator-value">—</div>
+                        </div>
+                        <span id="bb-state" class="indicator-state state-neutral">—</span>
+                    </div>
+                    <div class="indicator-row">
+                        <div>
+                            <div class="indicator-name">Volume (vs 20 SMA)</div>
+                            <div id="vol-value" class="indicator-value">—</div>
+                        </div>
+                        <span id="vol-state" class="indicator-state state-neutral">—</span>
+                    </div>
+                    <div class="indicator-row">
+                        <div>
+                            <div class="indicator-name">Price Trend (vs 50 SMA)</div>
+                            <div id="trend-value" class="indicator-value">—</div>
+                        </div>
+                        <span id="trend-state" class="indicator-state state-neutral">—</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Right column: charts -->
+        <div class="lg:col-span-2 space-y-6">
+            <div class="price-chart-container">
+                <canvas id="priceChart"></canvas>
+            </div>
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                <div class="chart-container"><canvas id="rsiChart"></canvas></div>
+                <div class="chart-container"><canvas id="macdChart"></canvas></div>
+                <div class="chart-container"><canvas id="volumeChart"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    let priceChart, rsiChart, macdChart, volumeChart;
+
+    const commonOptions = (title) => ({
+        responsive: true,
+        maintainAspectRatio: false,
+        plugins: {
+            title: { display: true, text: title, font: { size: 14 } },
+            legend: { display: true, position: 'bottom', labels: { boxWidth: 12, font: { size: 10 } } },
+        },
+        scales: {
+            x: { type: 'time', time: { unit: 'month', tooltipFormat: 'MMM dd, yyyy' }, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 7 } },
+            y: { grid: { color: '#e5e7eb' }, ticks: { font: { size: 10 } } },
+        },
+    });
+
+    function initCharts() {
+        priceChart = new Chart(document.getElementById('priceChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                datasets: [
+                    { label: 'Price', data: [], borderColor: '#3b82f6', borderWidth: 2, pointRadius: 0, yAxisID: 'y' },
+                    { label: '50 SMA', data: [], borderColor: '#f59e0b', borderWidth: 1, pointRadius: 0, borderDash: [5,5], yAxisID: 'y' },
+                    { label: 'Upper Band', data: [], borderColor: '#ef4444', borderWidth: 1, pointRadius: 0, borderDash: [2,2], yAxisID: 'y' },
+                    { label: 'Lower Band', data: [], borderColor: '#22c55e', borderWidth: 1, pointRadius: 0, borderDash: [2,2], fill: '-1', backgroundColor: 'rgba(239,68,68,0.05)', yAxisID: 'y' },
+                    { label: 'Long Signal', type: 'scatter', data: [], backgroundColor: '#22c55e', pointStyle: 'triangle', radius: 7, rotation: 0, yAxisID: 'y' },
+                    { label: 'Hedge Signal', type: 'scatter', data: [], backgroundColor: '#ef4444', pointStyle: 'triangle', radius: 7, rotation: 180, yAxisID: 'y' },
+                ],
+            },
+            options: {
+                ...commonOptions('Price / Bollinger Bands / 50 SMA'),
+                scales: {
+                    x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 8 } },
+                    y: { position: 'left', grid: { color: '#e5e7eb' } },
+                },
+            },
+        });
+
+        rsiChart = new Chart(document.getElementById('rsiChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                datasets: [
+                    { label: 'RSI (18)', data: [], borderColor: '#6366f1', borderWidth: 2, pointRadius: 0 },
+                    { label: 'Overbought (70)', data: [], borderColor: '#ef4444', borderWidth: 1, pointRadius: 0, borderDash: [5,5] },
+                    { label: 'Oversold (30)', data: [], borderColor: '#22c55e', borderWidth: 1, pointRadius: 0, borderDash: [5,5] },
+                ],
+            },
+            options: { ...commonOptions('RSI (18)'), scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { display: false } }, y: { min: 0, max: 100 } } },
+        });
+
+        macdChart = new Chart(document.getElementById('macdChart').getContext('2d'), {
+            type: 'line',
+            data: {
+                datasets: [
+                    { label: 'MACD Line', data: [], borderColor: '#0ea5e9', borderWidth: 2, pointRadius: 0 },
+                    { label: 'Signal Line', data: [], borderColor: '#f97316', borderWidth: 1, pointRadius: 0 },
+                ],
+            },
+            options: { ...commonOptions('MACD (12, 26, 9)'), scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { display: false } }, y: {} } },
+        });
+
+        volumeChart = new Chart(document.getElementById('volumeChart').getContext('2d'), {
+            type: 'bar',
+            data: {
+                datasets: [
+                    { label: 'Volume', data: [], backgroundColor: '#6b7280', yAxisID: 'y' },
+                    { label: '20 SMA', type: 'line', data: [], borderColor: '#f59e0b', borderWidth: 1, pointRadius: 0, yAxisID: 'y' },
+                ],
+            },
+            options: {
+                ...commonOptions('Volume vs 20 SMA'),
+                scales: { x: { type: 'time', time: { unit: 'month' }, grid: { display: false }, ticks: { display: false } }, y: { position: 'left' } },
+            },
+        });
+    }
+
+    function setIndicator(id, state, value) {
+        const valEl = document.getElementById(`${id}-value`);
+        const stateEl = document.getElementById(`${id}-state`);
+        if (valEl) valEl.textContent = value;
+        if (stateEl) {
+            stateEl.textContent = state;
+            stateEl.className = 'indicator-state';
+            stateEl.classList.add(state === 'bullish' ? 'state-bullish' : state === 'bearish' ? 'state-bearish' : 'state-neutral');
+        }
+    }
+
+    async function analyze() {
+        const symbol = document.getElementById('symbol-input').value.trim().toUpperCase();
+        const period = document.getElementById('period-select').value;
+        const statusEl = document.getElementById('data-status');
+        const btn = document.getElementById('analyze-btn');
+
+        if (!symbol) { statusEl.textContent = 'Please enter a symbol.'; return; }
+
+        statusEl.textContent = `Fetching ${symbol} data…`;
+        btn.disabled = true;
+        btn.textContent = 'Loading…';
+
+        try {
+            const resp = await fetch(`/api/signals?symbol=${encodeURIComponent(symbol)}&period=${period}`);
+            const data = await resp.json();
+
+            if (data.error) { statusEl.textContent = `Error: ${data.error}`; return; }
+
+            statusEl.textContent = `${data.row_count} trading days loaded for ${data.symbol} · as of ${data.as_of}`;
+
+            // Update latest signal box
+            const { signal, indicators } = data.latest;
+            const signalEl = document.getElementById('final-signal-display');
+            signalEl.classList.remove('bg-green-600', 'bg-red-600', 'bg-gray-400');
+            if (signal === 'long') {
+                signalEl.textContent = 'STRONG LONG SIGNAL';
+                signalEl.classList.add('bg-green-600');
+            } else if (signal === 'hedge') {
+                signalEl.textContent = 'STRONG HEDGE SIGNAL';
+                signalEl.classList.add('bg-red-600');
+            } else {
+                signalEl.textContent = 'NEUTRAL / NO SIGNAL';
+                signalEl.classList.add('bg-gray-400');
+            }
+
+            setIndicator('rsi',   indicators.rsi.state,   indicators.rsi.value);
+            setIndicator('macd',  indicators.macd.state,  indicators.macd.value);
+            setIndicator('bb',    indicators.bb.state,    indicators.bb.value);
+            setIndicator('vol',   indicators.vol.state,   indicators.vol.value);
+            setIndicator('trend', indicators.trend.state, indicators.trend.value);
+
+            // Update charts
+            const chart = data.chart;
+            const dates = chart.map(r => new Date(r.date));
+
+            priceChart.data.datasets[0].data = chart.map(r => ({ x: r.date, y: r.close }));
+            priceChart.data.datasets[1].data = chart.map(r => ({ x: r.date, y: r.sma50 }));
+            priceChart.data.datasets[2].data = chart.map(r => ({ x: r.date, y: r.bb_upper }));
+            priceChart.data.datasets[3].data = chart.map(r => ({ x: r.date, y: r.bb_lower }));
+            priceChart.data.datasets[4].data = chart.filter(r => r.signal === 'long').map(r => ({
+                x: r.date, y: r.bb_lower ? r.bb_lower * 0.98 : r.close * 0.98,
+            }));
+            priceChart.data.datasets[5].data = chart.filter(r => r.signal === 'hedge').map(r => ({
+                x: r.date, y: r.bb_upper ? r.bb_upper * 1.02 : r.close * 1.02,
+            }));
+            priceChart.update();
+
+            rsiChart.data.datasets[0].data = chart.map(r => ({ x: r.date, y: r.rsi }));
+            rsiChart.data.datasets[1].data = dates.map(d => ({ x: d, y: 70 }));
+            rsiChart.data.datasets[2].data = dates.map(d => ({ x: d, y: 30 }));
+            rsiChart.update();
+
+            macdChart.data.datasets[0].data = chart.map(r => ({ x: r.date, y: r.macd_line }));
+            macdChart.data.datasets[1].data = chart.map(r => ({ x: r.date, y: r.signal_line }));
+            macdChart.update();
+
+            volumeChart.data.datasets[0].data = chart.map(r => ({ x: r.date, y: r.volume }));
+            volumeChart.data.datasets[1].data = chart.map(r => ({ x: r.date, y: r.vol_sma20 }));
+            volumeChart.update();
+
+        } catch (err) {
+            statusEl.textContent = `Network error: ${err.message}`;
+        } finally {
+            btn.disabled = false;
+            btn.textContent = 'Analyze Signals';
+        }
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+        initCharts();
+        document.getElementById('analyze-btn').addEventListener('click', analyze);
+        document.getElementById('symbol-input').addEventListener('keydown', e => { if (e.key === 'Enter') analyze(); });
+        analyze(); // auto-load default symbol on first visit (backend caches result)
+    });
+</script>
+</body>
+</html>
